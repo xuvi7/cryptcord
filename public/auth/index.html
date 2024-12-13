@@ -89,6 +89,12 @@
       const toggleMode = document.getElementById("toggleMode");
       const usernameField = document.querySelector(".username-field");
       let isLoginMode = true;
+      /*const exampleSocket = new WebSocket("ws://localhost/ws");
+      exampleSocket.onopen = (event) => {
+        exampleSocket.send(
+          "Here's some text that the server is urgently awaiting!"
+        );
+      };*/
 
       toggleMode.addEventListener("click", (e) => {
         e.preventDefault();
