@@ -89,12 +89,6 @@
       const toggleMode = document.getElementById("toggleMode");
       const usernameField = document.querySelector(".username-field");
       let isLoginMode = true;
-      /*const exampleSocket = new WebSocket("ws://localhost/ws");
-      exampleSocket.onopen = (event) => {
-        exampleSocket.send(
-          "Here's some text that the server is urgently awaiting!"
-        );
-      };*/
 
       toggleMode.addEventListener("click", (e) => {
         e.preventDefault();
@@ -136,7 +130,7 @@
             alert(
               isLoginMode ? "Login successful!" : "Registration successful!"
             );
-            // window.location.href = "/chat";
+            window.location.href = "/chat";
           } else {
             const error = await response.json();
             console.error("Error:", error);
