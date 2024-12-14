@@ -691,7 +691,7 @@ func main() {
 	//* populate local channels
 
 	// start server at end because of blocking
-	err := http.ListenAndServe(":80", nil)
+	err := http.ListenAndServe(":8080", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
