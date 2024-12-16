@@ -85,7 +85,8 @@ html {
   display: flex;
   flex-direction: column;
   background-color: var(--discord-dark);
-  width: calc(100% - 250px);
+  width: calc(100% - 240px);
+  scrollbar-color: var(--discord-text-muted) transparent;
 }
 
 .chat-header {
