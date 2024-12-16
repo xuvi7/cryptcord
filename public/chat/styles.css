@@ -43,6 +43,10 @@ html {
   z-index: 1;
 }
 
+.current-channel {
+  background-color: var(--discord-hover);
+}
+
 .channels,
 .users {
   padding: 16px 12px;
