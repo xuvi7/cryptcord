@@ -342,19 +342,20 @@ func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed st
 		return err
 	}
 
-	updateMembershipSQL := "INSERT OR REPLACE INTO membership (channelUuid, userUuid) VALUES (?, ?);"
-
-	_, err = db.Exec(updateMembershipSQL, channelId, userToBeSubscribed)
+	getUserIDSQL := "SELECT uuid FROM users WHERE username = ?;"
+	userIDQuery := db.QueryRow(getUserIDSQL, userToBeSubscribed)
+	var userID string
+	err = userIDQuery.Scan(&userID)
+	if err != nil {
+		return err
+	}
+	updateMembershipSQL := "INSERT INTO membership (channelUuid, userUuid) VALUES (?, ?);"
+	_, err = db.Exec(updateMembershipSQL, channelId, userID)
 	if err != nil {
 		return err
 	}
 
-	username, err := findUsername(userToBeSubscribed)
-	if err != nil {
-		return err
-	}
-
-	updateUsers("subscribe", channelId, username)
+	updateUsers("subscribe", channelId, userToBeSubscribed)
 
 	return nil
 }
@@ -403,25 +404,30 @@ func deleteChannel(userUuid string, channelId string) error {
 		return err
 	}
 
+	updateUsers("deleteChannel", channelId)
+	transaction, transErr := db.Begin()
+	if transErr != nil {
+		return transErr
+	}
+	defer transaction.Commit()
 	deleteChannelSQL := "DELETE FROM channels WHERE uuid = ?;"
-	_, err = db.Exec(deleteChannelSQL, channelId)
+	_, err = transaction.Exec(deleteChannelSQL, channelId)
 	if err != nil {
 		return err
 	}
 
 	deleteMembershipSQL := "DELETE FROM membership WHERE channelUuid = ?;"
-	_, err = db.Exec(deleteMembershipSQL, channelId)
+	_, err = transaction.Exec(deleteMembershipSQL, channelId)
 	if err != nil {
 		return err
 	}
 
 	deleteMessagesSQL := "DELETE FROM messages WHERE channelUuid = ?;"
-	_, err = db.Exec(deleteMessagesSQL, channelId)
+	_, err = transaction.Exec(deleteMessagesSQL, channelId)
 	if err != nil {
 		return err
 	}
 
-	updateUsers("deleteChannel", channelId)
 	return nil
 }
 
@@ -557,6 +563,7 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	WHERE channelUuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?);`
 	getUsersSQL := `SELECT userUuid, channelUuid, username FROM membership INNER JOIN users ON membership.userUuid = users.uuid
 	WHERE channelUuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?)`
+	getUsernameSQL := `SELECT username FROM users WHERE uuid = ?;`
 
 	transaction, err := db.Begin()
 	if err != nil {
@@ -566,7 +573,10 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	channelsQuery, err1 := transaction.Query(getChannelsSQL, userID)
 	messagesQuery, err2 := transaction.Query(getMessagesSQL, userID)
 	usersQuery, err3 := transaction.Query(getUsersSQL, userID)
-	if err1 != nil || err2 != nil || err3 != nil {
+	usernameQuery := transaction.QueryRow(getUsernameSQL, userID)
+	var currentUsername string
+	err4 := usernameQuery.Scan(&currentUsername)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 		return
 	}
 
@@ -613,7 +623,78 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	response["result"] = "success"
+	response["username"] = currentUsername
 	response["channels"] = channels
+	response["messages"] = messages
+	response["users"] = users
+
+	marshaledResponse, _ := json.Marshal(response)
+	w.Write(marshaledResponse)
+}
+
+func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
+	channelID := req.PathValue("channelID")
+	authToken, err := getCookie(w, req)
+	if err != nil {
+		return
+	}
+	uuidAny, ok := tokens.Load(authToken)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("{\"error\": \"Invalid authentication token supplied\"}"))
+		return
+	}
+	userID := uuidAny.(string)
+
+	membershipSQL := "SELECT 1 FROM membership WHERE userUuid = ? AND channelUuid = ?;"
+	getMessagesSQL := `SELECT msgUuid, timestamp, username, msg FROM messages INNER JOIN users ON messages.userUuid = users.uuid
+	WHERE channelUuid = ?;`
+	getUsersSQL := `SELECT userUuid, username FROM membership INNER JOIN users ON membership.userUuid = users.uuid
+	WHERE channelUuid = ?;`
+	getChannelNameSQL := `SELECT name FROM channels WHERE uuid = ?;`
+
+	transaction, err := db.Begin()
+	if err != nil {
+		return
+	}
+	defer transaction.Commit()
+	membershipQuery := transaction.QueryRow(membershipSQL, userID, channelID)
+	var temp int
+	err1 := membershipQuery.Scan(&temp)
+	messagesQuery, err2 := transaction.Query(getMessagesSQL, channelID)
+	usersQuery, err3 := transaction.Query(getUsersSQL, channelID)
+	getNameQuery := transaction.QueryRow(getChannelNameSQL, channelID)
+	var channelName string
+	err4 := getNameQuery.Scan(&channelName)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return
+	}
+
+	response := make(map[string]interface{})
+	messages := make([]Message, 0, 1)
+	users := make([]User, 0, 1)
+
+	for messagesQuery.Next() {
+		var messageId string
+		var timestamp time.Time
+		var username string
+		var message string
+		if err := messagesQuery.Scan(&messageId, &timestamp, &username, &message); err != nil {
+			return
+		}
+		messages = append(messages, Message{messageId, timestamp, username, message})
+	}
+	for usersQuery.Next() {
+		var userUuid string
+		var username string
+		if err := usersQuery.Scan(&userUuid, &username); err != nil {
+			return
+		}
+		users = append(users, User{userUuid, username})
+	}
+
+	response["result"] = "success"
+	response["name"] = channelName
 	response["messages"] = messages
 	response["users"] = users
 
@@ -628,6 +709,7 @@ func main() {
 	http.HandleFunc("/api/login", login)
 	http.HandleFunc("/api/register", register)
 	http.HandleFunc("/api/getData", getDataHandler)
+	http.HandleFunc("/api/getChannel/{channelID}", getChannelDataHandler)
 	http.HandleFunc("/ws/{token}", handleWs)
 
 	setup := false

@@ -1,126 +1,174 @@
-body, html {
-    margin: 0;
-    padding: 0;
-    font-family: Arial, sans-serif;
-    height: 100%;
+body,
+html {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  height: 100%;
 }
 .chat-container {
-    display: flex;
-    height: 100%;
+  display: flex;
+  height: 100%;
 }
 .sidebar {
-    width: 200px;
-    background-color: #2c3e50;
-    color: white;
-    padding: 20px;
-    overflow-y: auto;
+  width: 250px;
+  background-color: #2c3e50;
+  color: white;
+  padding: 20px;
+  overflow-y: auto;
 }
-.channels, .users {
-    width: 80%;
-    margin-bottom: 20px;
+.channels,
+.users {
+  width: 80%;
+  margin-bottom: 20px;
 }
-.channels h2, .users h2 {
-    font-size: 18px;
-    margin-bottom: 10px;
+.channels h2,
+.users h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
 }
-.channel-list, .user-list {
-    list-style-type: none;
-    padding: 0;
+.channel-list,
+.user-list {
+  list-style-type: none;
+  padding: 0;
 }
-.channel-list li, .user-list li {
-    padding: 5px 0;
-    cursor: pointer;
+.channel-list li,
+.user-list li {
+  padding: 5px 0;
+  cursor: pointer;
 }
-.channel-list li:hover, .user-list li:hover {
-    background-color: #34495e;
+.channel-list li:hover,
+.user-list li:hover {
+  background-color: #34495e;
 }
 .chat-area {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    background-color: #ecf0f1;
+  /*flex-grow: 1;*/
+  display: flex;
+  flex-direction: column;
+  background-color: #ecf0f1;
+  width: calc(100% - 250px);
 }
 .chat-header {
-    background-color: #3498db;
-    color: white;
-    padding: 10px 20px;
+  background-color: #3498db;
+  color: white;
+  padding: 10px 20px;
 }
 .messages {
-    flex-grow: 1;
-    padding: 20px;
-    overflow-y: auto;
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
 }
 .message {
-    background-color: white;
-    border-radius: 5px;
-    padding: 10px;
-    margin-bottom: 10px;
+  background-color: white;
+  border-radius: 5px;
+  padding: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  word-wrap: break-word;
+  text-wrap: wrap;
 }
 .message-input {
-    display: flex;
-    padding: 20px;
-    background-color: white;
+  display: flex;
+  padding: 20px;
+  background-color: white;
 }
 .message-input input {
-    flex-grow: 1;
-    padding: 10px;
-    border: 1px solid #bdc3c7;
-    border-radius: 3px;
+  flex-grow: 1;
+  padding: 10px;
+  border: 1px solid #bdc3c7;
+  border-radius: 3px;
 }
 .message-input button {
-    padding: 10px 20px;
-    background-color: #2ecc71;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    margin-left: 10px;
-    cursor: pointer;
+  padding: 10px 20px;
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  margin-left: 10px;
+  cursor: pointer;
 }
 .message-input button:hover {
-    background-color: #27ae60;
+  background-color: #27ae60;
 }
 .create-channel-form {
-    display: flex;
-    margin-bottom: 10px;
+  display: flex;
+  margin-bottom: 10px;
 }
 .create-channel-form input {
-    padding: 8px;
-    border: 1px solid #bdc3c7;
-    border-radius: 4px 0 0 4px;
-    font-size: 14px;
-    width: 128px;
+  padding: 8px;
+  border: 1px solid #bdc3c7;
+  border-radius: 4px 0 0 4px;
+  font-size: 14px;
+  width: 128px;
 }
 .create-channel-form button {
-    background-color: #27ae60;
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 0 4px 4px 0;
-    cursor: pointer;
-    font-size: 14px;
-    transition: background-color 0.3s ease;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
 }
 .create-channel-form button:hover {
-    background-color: #2ecc71;
+  background-color: #2ecc71;
 }
-.context-menu {
-    display: none;
-    position: absolute;
-    background-color: #34495e;
-    border-radius: 4px;
-    padding: 5px 0;
-    min-width: 120px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+.context-menu,
+.message-menu {
+  display: none;
+  position: absolute;
+  background-color: #34495e;
+  border-radius: 4px;
+  padding: 5px 0;
+  min-width: 120px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 .context-menu ul {
-    list-style-type: none;
-    margin: 0;
-    padding: 0;
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
 }
 .context-menu li {
-    padding: 8px 12px;
-    cursor: pointer;
+  padding: 8px 12px;
+  cursor: pointer;
 }
 .context-menu li:hover {
-    background-color: #2c3e50;
+  background-color: #2c3e50;
+}
+
+.current-channel {
+  background-color: #3b536b;
+}
+
+.edit-input {
+  position: absolute;
+  display: none;
+  border-radius: 5px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: white;
+}
+.edit-input-field {
+  width: 100%;
+  height: 100%;
+}
+.subscribe-user-container input {
+  padding: 8px;
+  border: 1px solid #bdc3c7;
+  border-radius: 4px 0 0 4px;
+  font-size: 14px;
+  width: 128px;
+}
+.subscribe-user-container button {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+.subscribe-user-container button:hover {
+  background-color: #2ecc71;
 }

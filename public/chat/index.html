@@ -1,46 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Room</title>
+    <script src="./websocket.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chat Room</title>
-  <script src="./websocket.js"></script>
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-
-<body>
-  <div class="chat-container">
-    <div class="sidebar">
-      <div class="channels">
-        <h2>Channels</h2>
-        <form class="create-channel-form">
-          <input type="text" placeholder="New channel" class="new-channel-input" required>
-          <button type="submit">Create</button>
-        </form>
-        <ul class="channel-list"></ul>
+  <body>
+    <div class="chat-container">
+      <div class="sidebar">
+        <div class="channels">
+          <h2>Channels</h2>
+          <form class="create-channel-form">
+            <input
+              type="text"
+              placeholder="New channel"
+              class="new-channel-input"
+              required
+            />
+            <button type="submit">Create</button>
+          </form>
+          <ul class="channel-list"></ul>
+        </div>
+        <div class="users">
+          <h2>Users</h2>
+          <ul class="user-list"></ul>
+          <div class="subscribe-user-container">
+            <input
+              class="subscribe-input-field"
+              type="text"
+              placeholder="Add user"
+            />
+            <button id="subscribe-button" onclick="subscribeUser()">Add</button>
+          </div>
+        </div>
       </div>
-      <div class="users">
-        <h2>Users</h2>
-        <ul class="user-list"></ul>
+      <div class="chat-area">
+        <div class="chat-header">
+          <h1 class="current-channel-header"></h1>
+        </div>
+        <div class="messages"></div>
+        <div class="message-input">
+          <input
+            class="message-input-field"
+            type="text"
+            placeholder="Type your message..."
+          />
+          <button id="send-message-button" onclick="sendMessage()">Send</button>
+        </div>
       </div>
     </div>
-    <div class="chat-area">
-      <div class="chat-header">
-        <h1 class="current-channel-header"></h1>
-      </div>
-      <div class="messages"></div>
-      <div class="message-input">
-        <input class="message-input-field" type="text" placeholder="Type your message..." />
-        <button onclick="sendMessage()">Send</button>
-      </div>
+    <div class="context-menu channel-menu">
+      <ul>
+        <li class="delete-channel">Delete Channel</li>
+      </ul>
     </div>
-  </div>
-  <div class="context-menu" class="context-menu">
-    <ul>
-      <li class="delete-channel">Delete Channel</li>
-    </ul>
-  </div>
-</body>
-
+    <div class="context-menu message-menu">
+      <ul>
+        <li class="edit-message">Edit Message</li>
+        <li class="delete-message">Delete Message</li>
+      </ul>
+    </div>
+    <div class="edit-input">
+      <textarea class="edit-input-field" type="text" placeholder=""></textarea>
+    </div>
+  </body>
 </html>
