@@ -82,10 +82,10 @@ html {
 }
 
 .chat-area {
-  flex: 1;
   display: flex;
   flex-direction: column;
   background-color: var(--discord-dark);
+  width: calc(100% - 250px);
 }
 
 .chat-header {
@@ -123,6 +123,8 @@ html {
   margin: 0;
   border-radius: 4px;
   background: transparent;
+  word-wrap: break-word;
+  text-wrap: wrap;
 }
 
 .message:hover {
@@ -188,6 +190,7 @@ html {
   padding: 6px 0;
   min-width: 180px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+  z-index: 2;
 }
 
 .context-menu ul {
@@ -216,12 +219,17 @@ html {
 
 .edit-input-field {
   width: 100%;
-  padding: 12px;
+  height: 100%;
+  padding: 4px;
   background: transparent;
   border: none;
   color: var(--discord-light);
   font-size: 16px;
   resize: none;
+}
+
+.edit-input-field:focus {
+  outline: none;
 }
 
 /* Mobile responsiveness */

@@ -59,8 +59,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Context menu for channels
   channelList.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    const clickedChannel = e.target.closest("li");
-    if (clickedChannel && clickedChannel.id !== currentChannel) {
+    const clickedChannel = e.target;
+    if (clickedChannel && clickedChannel.classList.contains("channel") && clickedChannel.id !== currentChannel) {
       channelContextMenu.style.display = "block";
       channelContextMenu.style.left = `${e.pageX}px`;
       channelContextMenu.style.top = `${e.pageY}px`;
@@ -73,22 +73,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // Context menu for messages
   messageList.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    const clickedMessage = e.target.closest(".message-block");
-    if (clickedMessage === null) {
+    const clickedMessage = e.target;
+    if (clickedMessage === null || !clickedMessage.classList.contains("message")) {
       return;
     }
-    const username = clickedMessage.firstElementChild;
-    const message = clickedMessage.lastElementChild;
-    const messageRect = message.getBoundingClientRect();
+    const messageBlock = e.target.closest(".message-block");
+    const username = messageBlock.firstElementChild;
+    const messageRect = clickedMessage.getBoundingClientRect();
     if (username && username.textContent === myUsername) {
       messageContextMenu.style.display = "block";
       messageContextMenu.style.left = `${e.pageX}px`;
       messageContextMenu.style.top = `${e.pageY}px`;
       editMessageOption.onclick = () => {
-        summonEditInput(message.textContent, messageRect, clickedMessage.id);
+        summonEditInput(clickedMessage.textContent, messageRect, messageBlock.id);
       };
       deleteMessageOption.onclick = () => {
-        deleteMessage(clickedMessage.id);
+        deleteMessage(messageBlock.id);
       };
     }
   });
@@ -199,6 +199,7 @@ function renderCurrentUsers() {
 async function renderNewChannel(id, name) {
   const channel = document.createElement("li");
   channel.setAttribute("id", id);
+  channel.classList.add("channel");
   channel.textContent = name;
   channel.addEventListener("click", () => {
     updateCurrentChannel(channel.id);
