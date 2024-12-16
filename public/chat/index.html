@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chat Room</title>
-    <script src="./websocket.js"></script>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
 
-  <body>
-    <div class="chat-container">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Room</title>
+  <script src="./websocket.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <div class="chat-container">
       <div class="sidebar">
         <div class="channels">
           <h2>Channels</h2>
+          <ul class="channel-list"></ul>
           <form class="create-channel-form">
             <input
               type="text"
@@ -22,7 +24,6 @@
             />
             <button type="submit">Create</button>
           </form>
-          <ul class="channel-list"></ul>
         </div>
         <div class="users">
           <h2>Users</h2>
@@ -48,7 +49,6 @@
             type="text"
             placeholder="Type your message..."
           />
-          <button id="send-message-button" onclick="sendMessage()">Send</button>
         </div>
       </div>
     </div>
@@ -66,5 +66,6 @@
     <div class="edit-input">
       <textarea class="edit-input-field" type="text" placeholder=""></textarea>
     </div>
-  </body>
+</body>
+
 </html>

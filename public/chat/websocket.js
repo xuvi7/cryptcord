@@ -190,7 +190,7 @@ function renderCurrentUsers() {
   const userList = document.querySelector(".user-list");
   userList.textContent = "";
   users[currentChannel].map((username) => {
-    const newUser = document.createElement("div");
+    const newUser = document.createElement("li");
     newUser.textContent = username;
     userList.appendChild(newUser);
   });
