@@ -220,6 +220,10 @@
       const password = document.getElementById("password").value;
       const username = document.getElementById("username").value;
 
+      // PKDF secret key
+      // (register) generate assym key pair and encrypt private with secret key
+      // (login) ask server for encrypted private key, decrypt it, and use it to decrypt secret value that server sends
+
       const endpoint = isLoginMode ? "/api/login" : "/api/register";
       const data = isLoginMode
         ? { email, password }
