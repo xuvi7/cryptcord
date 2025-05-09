@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	// "bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -23,7 +23,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
-	"golang.org/x/crypto/argon2"
+	// "golang.org/x/crypto/argon2"
 )
 
 const (
@@ -31,21 +31,31 @@ const (
 	SALT_LENGTH          = 16
 )
 
+type saltQuery struct {
+	Email string `json:"email"`
+}
+
 type loginRequest struct {
 	Email    string `json:"email"`
-	Password string `json:"password"`
+	PublicKey []uint8 `json:"publicKey"`
 }
 
 type registerRequest struct {
 	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username string `json:"username"`
+	PublicKey []uint8 `json:"publicKey"`
+	Salt []uint8 `json:"salt"`
+}
+
+type keyRequest struct {
 	Username string `json:"username"`
 }
 
 type userRequest struct {
 	Type string `json:"type"` // types are: message, edit, delete, chanelSub, channelAdd, channelDelete
 	Arg1 string `json:"arg1"`
-	Arg2 string `json:"arg2,omitempty"`
+	Arg2 any `json:"arg2,omitempty"`
+	Arg3 any `json:"arg3,omitempty"`
 }
 
 type Message struct {
@@ -53,12 +63,13 @@ type Message struct {
 	Timestamp time.Time `json:"timestamp"`
 	//	ChannelID string    `json:"channelId"`
 	Username string `json:"username"`
-	Message  string `json:"message"`
+	Message  []uint8 `json:"message"`
 }
 
 type Channel struct {
 	ChannelID   string `json:"channelId"`
 	ChannelName string `json:"channelName"`
+	Key 		[]uint8 `json:"key"`
 }
 
 type User struct {
@@ -78,14 +89,14 @@ var userConnections map[string]*websocket.Conn // maps user ID to websocket conn
 * 3. create session token for user
 * 4. send http response with session token as cookie
  */
-func register(w http.ResponseWriter, req *http.Request) {
+func handleRegister(w http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return
 	}
 	var requestData registerRequest
 	json.Unmarshal(body, &requestData)
-	uuid, err := registerUser(requestData.Email, requestData.Password, requestData.Username)
+	uuid, err := registerUser(requestData.Email, requestData.Username, requestData.PublicKey, requestData.Salt)
 	response := make(map[string]string)
 	if err != nil {
 		response["error"] = err.Error()
@@ -107,7 +118,7 @@ func register(w http.ResponseWriter, req *http.Request) {
  * 2. create session token for user
  * 3. send http response with session token as cookie
  */
-func login(w http.ResponseWriter, req *http.Request) {
+func handleLogin(w http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return
@@ -115,7 +126,7 @@ func login(w http.ResponseWriter, req *http.Request) {
 
 	var requestData loginRequest
 	json.Unmarshal(body, &requestData)
-	uuid, err := loginUser(requestData.Email, requestData.Password)
+	uuid, err := loginUser(requestData.Email, requestData.PublicKey)
 	response := make(map[string]string)
 	if err != nil {
 		response["error"] = err.Error()
@@ -128,6 +139,53 @@ func login(w http.ResponseWriter, req *http.Request) {
 	sessionToken := createSessionToken(uuid)
 	setCookieHandler(w, sessionToken)
 	w.Write([]byte("{}"))
+}
+
+/*
+* API ENDPOINT HANDLER
+ */
+func handleSaltRequest(w http.ResponseWriter, req *http.Request) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return
+	}
+	var requestData saltQuery
+	json.Unmarshal(body, &requestData)
+	salt, err := getUserSalt(requestData.Email)
+	response := make(map[string]interface{})
+	if err != nil {
+		response["error"] = err.Error()
+		marshaledResponse, _ := json.Marshal(response)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(marshaledResponse)
+		return
+	}
+
+	response["salt"] = salt
+	marshaledResponse, _ := json.Marshal(response)
+	w.Write(marshaledResponse)
+}
+
+func handleKeyRequest(w http.ResponseWriter, req *http.Request) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return
+	}
+	var requestData keyRequest
+	json.Unmarshal(body, &requestData)
+	publicKey, err := getUserPKey(requestData.Username)
+	response := make(map[string]interface{})
+	if err != nil {
+		response["error"] = err.Error()
+		marshaledResponse, _ := json.Marshal(response)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(marshaledResponse)
+		return
+	}
+
+	response["publicKey"] = publicKey
+	marshaledResponse, _ := json.Marshal(response)
+	w.Write(marshaledResponse)
 }
 
 func handleWs(w http.ResponseWriter, req *http.Request) {
@@ -158,23 +216,48 @@ func handleWs(w http.ResponseWriter, req *http.Request) {
 
 			switch userReq.Type {
 			case "message":
-				if userReq.Arg2 == "" {
+				if userReq.Arg2 == nil {
 					err = fmt.Errorf("missing message content")
 					break
 				}
-				err = createMessage(userID, userReq.Arg1, userReq.Arg2)
+				arg2, ok := userReq.Arg2.([]uint8)
+				if !ok {
+					err = fmt.Errorf("message content invalid type")
+					break
+				}
+				err = createMessage(userID, userReq.Arg1, arg2)
 			case "edit":
-				if userReq.Arg2 == "" {
+				if userReq.Arg2 == nil {
 					err = fmt.Errorf("missing message content")
 					break
 				}
-				err = editMessage(userID, userReq.Arg1, userReq.Arg2)
+				arg2, ok := userReq.Arg2.([]uint8)
+				if !ok {
+					err = fmt.Errorf("message content invalid type")
+					break
+				}
+				err = editMessage(userID, userReq.Arg1, arg2)
 			case "delete":
 				err = deleteMessage(userID, userReq.Arg1)
 			case "channelSub":
-				err = subscribeToChannel(userID, userReq.Arg1, userReq.Arg2)
+				arg2, ok := userReq.Arg2.(string)
+				if !ok {
+					err = fmt.Errorf("subscribed user invalid type")
+					break
+				}
+				arg3, ok := userReq.Arg3.([]uint8)
+				if !ok {
+					err = fmt.Errorf("invalid key type")
+					break
+				}
+				err = subscribeToChannel(userID, userReq.Arg1, arg2, arg3)
 			case "channelAdd":
-				err = createChannel(userID, userReq.Arg1)
+				arg2, ok := userReq.Arg2.([]uint8)
+				if !ok {
+					err = fmt.Errorf("invalid key type")
+					break
+				}
+				err = createChannel(userID, userReq.Arg1, arg2)
 			case "channelDelete":
 				err = deleteChannel(userID, userReq.Arg1)
 			default:
@@ -202,54 +285,69 @@ func createDatabase() {
 	file.Close()
 }
 
-func registerUser(email string, password string, username string) (string, error) {
-	if len(password) < 8 || len(username) < 3 {
-		return "", errors.New("username must be longer than 3 characters and password must be 8 characters or more")
+func registerUser(email string, username string, publicKey []uint8, salt []uint8) (string, error) {
+	if len(username) < 3 {
+		return "", errors.New("username must be longer than 3 characters")
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
 		return "", errors.New("invalid email address")
 	}
 	uuid := uuid.New()
-	salt := make([]byte, SALT_LENGTH)
-	_, err := rand.Read(salt)
-	if err != nil {
-		return "", err
-	}
-	hashedPassword := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
 	// don't need to manually check duplicates due to SQL setup
 	insertUserSQL := `INSERT INTO users (
 		"uuid",		
 		"email",
-		"password",
 		"username",
 		"salt"
-		) VALUES (?, ?, ?, ?, ?);`
+		) VALUES (?, ?, ?, ?);`
 
-	_, err = db.Exec(insertUserSQL, uuid.String(), email, hashedPassword, username, salt)
+	_, err := db.Exec(insertUserSQL, uuid.String(), email, username, publicKey, salt)
 	if err != nil {
 		return "", err
 	}
 	return uuid.String(), nil
 }
 
-func loginUser(email string, password string) (string, error) {
-	getUserSQL := `SELECT uuid, password, salt FROM users WHERE email = ?`
-	row := db.QueryRow(getUserSQL, email)
+func loginUser(email string, publicKey []uint8) (string, error) {
+	// TODO: server uses public key to sign secret value and user and to return the decrypted value to authenticate
+	getUserSQL := `SELECT username, uuid FROM users WHERE email = ? AND publicKey = ?`
+	row := db.QueryRow(getUserSQL, email, publicKey)
+	var username string
 	var uuid string
-	var hashedPwd []byte
-	var salt []byte
-	err := row.Scan(&uuid, &hashedPwd, &salt)
+	err := row.Scan(&username, &uuid)
 	if err != nil {
 		return "", err
 	}
-	if bytes.Equal(hashedPwd, argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)) {
-		return uuid, nil
-	} else {
-		return "", errors.New("incorrect password")
-	}
+	return uuid, nil
 }
 
-func createMessage(userUuid string, channelId string, content string) error {
+func getUserSalt(email string) ([]uint8, error) {
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, errors.New("invalid email address")
+	}
+
+	findSaltSQL := `SELECT salt FROM users WHERE email = ?`
+	val := db.QueryRow(findSaltSQL, email)
+	salt := make([]uint8, 0)
+	err := val.Scan(&salt)
+	if err != nil {
+		return nil, err
+	}
+	return salt, nil
+}
+
+func getUserPKey(username string) ([]uint8, error) {
+	getUserSQL := `SELECT publicKey FROM users WHERE username = ?`
+	row := db.QueryRow(getUserSQL, username)
+	var key []uint8
+	err := row.Scan(&username, &key)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func createMessage(userUuid string, channelId string, content []uint8) error {
 	//* verify that uuid is subscribed to channel
 	verifyMembershipSQL := "SELECT 1 FROM membership WHERE channelUuid = ? AND userUuid = ?;"
 
@@ -279,7 +377,7 @@ func createMessage(userUuid string, channelId string, content string) error {
 	return nil
 }
 
-func editMessage(userUuid string, messageId string, content string) error {
+func editMessage(userUuid string, messageId string, content []uint8) error {
 	verifyOwnershipSQL := "SELECT 1 FROM messages WHERE userUuid = ? AND msgUuid = ?;"
 
 	val := db.QueryRow(verifyOwnershipSQL, userUuid, messageId)
@@ -332,7 +430,7 @@ func deleteMessage(userUuid string, messageId string) error {
 	return nil
 }
 
-func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed string) error {
+func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed string, encryptedKey []uint8) error {
 	verifyMembershipSQL := "SELECT 1 FROM membership WHERE channelUuid = ? AND userUuid = ?;"
 
 	val := db.QueryRow(verifyMembershipSQL, channelId, userUuid)
@@ -349,8 +447,8 @@ func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed st
 	if err != nil {
 		return err
 	}
-	updateMembershipSQL := "INSERT INTO membership (channelUuid, userUuid) VALUES (?, ?);"
-	_, err = db.Exec(updateMembershipSQL, channelId, userID)
+	updateMembershipSQL := "INSERT INTO membership (channelUuid, userUuid, encryptedKey) VALUES (?, ?, ?);"
+	_, err = db.Exec(updateMembershipSQL, channelId, userID, encryptedKey)
 	if err != nil {
 		return err
 	}
@@ -360,7 +458,7 @@ func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed st
 	return nil
 }
 
-func createChannel(userUuid string, name string) error {
+func createChannel(userUuid string, name string, encryptedKey []uint8) error {
 	createChannelSQL := `INSERT INTO channels (
 			"uuid",
 			"owner",
@@ -375,10 +473,11 @@ func createChannel(userUuid string, name string) error {
 
 	insertMembershipSQL := `INSERT INTO membership (
 			"channelUuid",
-			"userUuid"
-		) VALUES (?, ?);`
+			"userUuid",
+			"encryptedKey"
+		) VALUES (?, ?, ?);`
 
-	_, err = db.Exec(insertMembershipSQL, channelUuid, userUuid)
+	_, err = db.Exec(insertMembershipSQL, channelUuid, userUuid, encryptedKey)
 	if err != nil {
 		return err
 	}
@@ -498,8 +597,8 @@ func setCookieHandler(w http.ResponseWriter, token string) {
  * createChannel args: username;
  * deleteChannel args: null;
  */
-func updateUsers(action string, channelId string, args ...string) {
-	response := make(map[string]string)
+func updateUsers(action string, channelId string, args ...any) {
+	response := make(map[string]interface{})
 	response["action"] = action
 	response["channelId"] = channelId
 	for counter := 1; counter <= len(args); counter++ {
@@ -545,7 +644,7 @@ func getCookie(w http.ResponseWriter, r *http.Request) (string, error) {
 	return cookie.Value, nil
 }
 
-func getDataHandler(w http.ResponseWriter, req *http.Request) {
+func handleGetData(w http.ResponseWriter, req *http.Request) {
 	authToken, err := getCookie(w, req)
 	if err != nil {
 		return
@@ -558,11 +657,13 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	userID := uuidAny.(string)
 
-	getChannelsSQL := "SELECT uuid, name FROM channels WHERE uuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?)"
+	getChannelsSQL := `SELECT uuid, name, encryptedKey FROM channels INNER JOIN membership ON (channels.uuid = membership.channelUuid AND membership.userUuid = ?)
+	WHERE uuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?)`
 	getMessagesSQL := `SELECT msgUuid, timestamp, channelUuid, username, msg FROM messages INNER JOIN users ON messages.userUuid = users.uuid
 	WHERE channelUuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?);`
 	getUsersSQL := `SELECT userUuid, channelUuid, username FROM membership INNER JOIN users ON membership.userUuid = users.uuid
 	WHERE channelUuid IN (SELECT channelUuid FROM membership WHERE userUuid = ?)`
+	// getKeysSQL := `SELECT channelUuid, encryptedKey FROM membership WHERE userUuid userUuid = ?`
 	getUsernameSQL := `SELECT username FROM users WHERE uuid = ?;`
 
 	transaction, err := db.Begin()
@@ -570,7 +671,7 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer transaction.Commit()
-	channelsQuery, err1 := transaction.Query(getChannelsSQL, userID)
+	channelsQuery, err1 := transaction.Query(getChannelsSQL, userID, userID)
 	messagesQuery, err2 := transaction.Query(getMessagesSQL, userID)
 	usersQuery, err3 := transaction.Query(getUsersSQL, userID)
 	usernameQuery := transaction.QueryRow(getUsernameSQL, userID)
@@ -588,17 +689,18 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	for channelsQuery.Next() {
 		var channelId string
 		var channelName string
-		if err := channelsQuery.Scan(&channelId, &channelName); err != nil {
+		var key []uint8
+		if err := channelsQuery.Scan(&channelId, &channelName, &key); err != nil {
 			return
 		}
-		channels = append(channels, Channel{channelId, channelName})
+		channels = append(channels, Channel{channelId, channelName, key})
 	}
 	for messagesQuery.Next() {
 		var messageId string
 		var timestamp time.Time
 		var channelId string
 		var username string
-		var message string
+		var message []uint8
 		if err := messagesQuery.Scan(&messageId, &timestamp, &channelId, &username, &message); err != nil {
 			return
 		}
@@ -632,7 +734,7 @@ func getDataHandler(w http.ResponseWriter, req *http.Request) {
 	w.Write(marshaledResponse)
 }
 
-func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
+func handleGetChannelData(w http.ResponseWriter, req *http.Request) {
 	channelID := req.PathValue("channelID")
 	authToken, err := getCookie(w, req)
 	if err != nil {
@@ -651,7 +753,7 @@ func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
 	WHERE channelUuid = ?;`
 	getUsersSQL := `SELECT userUuid, username FROM membership INNER JOIN users ON membership.userUuid = users.uuid
 	WHERE channelUuid = ?;`
-	getChannelNameSQL := `SELECT name FROM channels WHERE uuid = ?;`
+	getChannelInfoSQL := `SELECT name, encryptedKey FROM channels INNER JOIN membership ON (channels.uuid = membership.channelUuid AND membership.userUuid = ?) WHERE channels.uuid = ?;`
 
 	transaction, err := db.Begin()
 	if err != nil {
@@ -663,9 +765,10 @@ func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
 	err1 := membershipQuery.Scan(&temp)
 	messagesQuery, err2 := transaction.Query(getMessagesSQL, channelID)
 	usersQuery, err3 := transaction.Query(getUsersSQL, channelID)
-	getNameQuery := transaction.QueryRow(getChannelNameSQL, channelID)
+	getInfoQuery := transaction.QueryRow(getChannelInfoSQL, userID, channelID)
 	var channelName string
-	err4 := getNameQuery.Scan(&channelName)
+	var encryptedKey []uint8
+	err4 := getInfoQuery.Scan(&channelName, &encryptedKey)
 	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 		return
 	}
@@ -678,7 +781,7 @@ func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
 		var messageId string
 		var timestamp time.Time
 		var username string
-		var message string
+		var message []uint8
 		if err := messagesQuery.Scan(&messageId, &timestamp, &username, &message); err != nil {
 			return
 		}
@@ -695,6 +798,7 @@ func getChannelDataHandler(w http.ResponseWriter, req *http.Request) {
 
 	response["result"] = "success"
 	response["name"] = channelName
+	response["key"] = encryptedKey
 	response["messages"] = messages
 	response["users"] = users
 
@@ -706,10 +810,12 @@ func main() {
 	userConnections = make(map[string]*websocket.Conn)
 	http.Handle("/", http.FileServer(http.Dir("./public/auth/")))
 	http.Handle("/chat/", http.FileServer(http.Dir("./public/")))
-	http.HandleFunc("/api/login", login)
-	http.HandleFunc("/api/register", register)
-	http.HandleFunc("/api/getData", getDataHandler)
-	http.HandleFunc("/api/getChannel/{channelID}", getChannelDataHandler)
+	http.HandleFunc("/api/salt", handleSaltRequest)
+	http.HandleFunc("/api/login", handleLogin)
+	http.HandleFunc("/api/register", handleRegister)
+	http.HandleFunc("/api/getKey", handleKeyRequest)
+	http.HandleFunc("/api/getData", handleGetData)
+	http.HandleFunc("/api/getChannel/{channelID}", handleGetChannelData)
 	http.HandleFunc("/ws/{token}", handleWs)
 
 	setup := false
@@ -724,7 +830,6 @@ func main() {
 		createUserTableSQL := `CREATE TABLE users (
 		"uuid" TEXT NOT NULL PRIMARY KEY,		
 		"email" TEXT NOT NULL UNIQUE,
-		"password" BLOB NOT NULL,
 		"username" TEXT NOT NULL UNIQUE,
 		"salt" BLOB NOT NULL
 		);`
@@ -748,6 +853,7 @@ func main() {
 		createMembershipTableSQL := `CREATE TABLE membership (
 			"channelUuid" TEXT NOT NULL,		
 			"userUuid" TEXT NOT NULL,
+			"encryptedKey" BLOB NOT NULL,
 			UNIQUE("channelUuid", "userUuid")
 		);`
 
@@ -761,7 +867,7 @@ func main() {
 			"timestamp" DATETIME NOT NULL,
 			"channelUuid" TEXT NOT NULL,		
 			"userUuid" TEXT NOT NULL,
-			"msg" TEXT NOT NULL
+			"msg" BLOB NOT NULL
 		);`
 
 		_, err = db.Exec(createMessagesTableSQL)
