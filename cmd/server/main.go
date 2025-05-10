@@ -172,6 +172,7 @@ func handleLoginRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	response["salt"] = salt
+	response["publicKey"] = publicKey
 	response["encryptedPrivateKey"] = encryptedPrivateKey
 	response["iv"] = iv
 	response["secret"] = encryptedSecret
@@ -506,7 +507,7 @@ func subscribeToChannel(userUuid string, channelId string, userToBeSubscribed st
 		return err
 	}
 
-	updateUsers("subscribe", channelId, userToBeSubscribed)
+	updateUsers("subscribe", channelId, userToBeSubscribed, encryptedKey)
 
 	return nil
 }

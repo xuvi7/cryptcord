@@ -1,4 +1,5 @@
 let messages = {}; //* dict of channelId to array of {messageId, username, message}
+let keys = {}; //* dict of channelID to channelKey
 let users = {}; //* dict of channelId to array of usernames
 let myUsername = "";
 let currentChannel = "";
@@ -9,20 +10,20 @@ if (token === "") {
 }
 // console.log(token);
 const socket = new WebSocket(`ws://localhost:8080/ws/${token}`);
-socket.onmessage = (event) => {
+socket.onmessage = async (event) => {
   const data = JSON.parse(event.data);
   switch (data.action) {
     case "message":
-      handleMessage(data.channelId, data.arg1, data.arg2, data.arg3, data.arg4);
+      await handleMessage(data.channelId, data.arg1, data.arg2, data.arg3, data.arg4);
       break;
     case "edit":
-      handleEdit(data.channelId, data.arg1, data.arg2);
+      await handleEdit(data.channelId, data.arg1, data.arg2);
       break;
     case "delete":
       handleDelete(data.channelId, data.arg1);
       break;
     case "subscribe":
-      handleSubscribe(data.channelId, data.arg1);
+      await handleSubscribe(data.channelId, data.arg1, data.arg2);
       break;
     case "createChannel":
       handleCreateChannel(data.channelId, data.arg1, data.arg2);
@@ -47,11 +48,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const editInputField = document.querySelector(".edit-input-field");
 
   // Create new channel
-  createChannelForm.addEventListener("submit", (e) => {
+  createChannelForm.addEventListener("submit", async (e) => {
+    const channelKey = await generateChannelKey();
+    const encryptedChannelKey = await encryptChannelKey(channelKey, str2ab(sessionStorage.getItem("publicKey")));
     e.preventDefault();
     const newChannelName = newChannelInput.value.trim();
     if (newChannelName) {
-      createChannel(newChannelName);
+      createChannel(newChannelName, encryptedChannelKey);
       newChannelInput.value = "";
     }
   });
@@ -99,12 +102,12 @@ document.addEventListener("DOMContentLoaded", () => {
     messageContextMenu.style.display = "none";
   });
 
-  messageInputField.addEventListener("keypress", function (event) {
+  messageInputField.addEventListener("keypress", async function (event) {
     // If the user presses the "Enter" key on the keyboard
     if (event.key === "Enter") {
       // Cancel the default action, if needed
       event.preventDefault();
-      sendMessage();
+      await sendMessage();
       messageInputField.value = "";
     }
   });
@@ -209,7 +212,9 @@ async function renderNewChannel(id, name) {
 
 //*===============SERVER RESPONSE HANDLERS===================
 
-function handleMessage(channelId, messageId, username, time, message) {
+async function handleMessage(channelId, messageId, username, time, encryptedMessage) {
+  const message = await decryptMessage(encryptedMessage, keys[channelId]);
+
   if (channelId === /* currently selected channel */ currentChannel) {
     const newDiv = document.createElement("div");
     newDiv.setAttribute("id", messageId);
@@ -231,7 +236,9 @@ function handleMessage(channelId, messageId, username, time, message) {
   });
 }
 
-function handleEdit(channelId, messageId, content) {
+async function handleEdit(channelId, messageId, encryptedContent) {
+  const content = await decryptMessage(encryptedContent, keys[channelId]);
+
   if (channelId === currentChannel) {
     const editedMessage = document.getElementById(messageId);
     editedMessage.children[1].textContent = content;
@@ -254,14 +261,23 @@ function handleDelete(channelId, messageId) {
   );
 }
 
-async function handleSubscribe(channelId, username) {
+async function handleSubscribe(channelId, username, encryptedKey) {
   if (channelId === currentChannel) {
     users[channelId].push(username);
     renderCurrentUsers();
   } else {
+    console.log("subscribe channel key:" + encryptedKey);
+    keys[channelId] = await decryptChannelKey(encryptedKey);
     const channelData = await fetch(`/api/getChannel/${channelId}`);
     const channelDataJson = await channelData.json();
-    messages[channelId] = channelDataJson.messages;
+    messages[channelId] = [];
+    channelDataJson.messages.map(async (val) => {
+      messages[channelId].push({
+        messageId: val.messageId,
+        username: val.username,
+        message: await decryptMessage(val.message, keys[channelId]),
+      });
+    });
     users[channelId] = channelDataJson.users.map((user) => user.username);
     renderNewChannel(channelId, channelDataJson.name);
   }
@@ -275,6 +291,7 @@ function handleCreateChannel(channelId, username, name) {
 
 function handleDeleteChannel(channelId) {
   messages[channelId] = [];
+  keys[channelId] = [];
   users[channelId] = [];
   const channelLi = document.getElementById(channelId);
   channelLi.parentElement.removeChild(channelLi);
@@ -295,21 +312,27 @@ async function getData() {
 
       myUsername = result.username;
 
+      for (const channel in result.channels) {
+        console.log("channelkey:" + channel.key);
+        keys[channel.channelId] = await decryptChannelKey(channel.key);
+      }
+
       for (const channel in result.messages) {
-        messages[channel] = result.messages[channel];
-        //result.messages[channel].map((val) => {
-        /*messages[channel].push({
+        messages[channel] = [];
+        result.messages[channel].map(async (val) => {
+          messages[channel].push({
             messageId: val.messageId,
             username: val.username,
-            message: val.message,
-          });*/
-        //});
+            message: await decryptMessage(val.message, keys[channel]),
+          });
+        });
       }
       for (const channel in result.users) {
         users[channel] = result.users[channel].map((val) => {
           return val.username;
         });
       }
+
       result.channels.map((value, index) => {
         renderNewChannel(value.channelId, value.channelName);
         if (index === 0) {
@@ -332,34 +355,49 @@ async function getData() {
   }
 }
 
-function sendMessage() {
+async function sendMessage() {
   const inputField = document.querySelector(".message-input-field");
   const text = inputField.value;
   if (text !== undefined && text !== "") {
+    console.log(await encryptMessage(text, keys[currentChannel]));
     socket.send(
-      JSON.stringify({ type: "message", arg1: currentChannel, arg2: text })
+      JSON.stringify({ type: "message", arg1: currentChannel, arg2: await encryptMessage(text, keys[currentChannel]) })
     );
     inputField.value = "";
   }
 }
 
-function subscribeUser() {
+async function subscribeUser() {
   const inputField = document.querySelector(".subscribe-input-field");
   const username = inputField.value;
   if (username !== undefined && username !== "") {
-    socket.send(
-      JSON.stringify({
-        type: "channelSub",
-        arg1: currentChannel,
-        arg2: username,
-      })
-    );
+    try {
+      const endpoint = "/api/getKey"
+      const data = { username }
+      const response = await sendData(endpoint, data);
+      if (response.ok) {
+        const result = await response.json();
+        socket.send(
+          JSON.stringify({
+            type: "channelSub",
+            arg1: currentChannel,
+            arg2: username,
+            arg3: await encryptChannelKey(keys[currentChannel], result.publicKey)
+          })
+        );
+      } else {
+        const error = await response.json();
+        console.error("Error:", error);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    }
     inputField.value = "";
   }
 }
 
-function createChannel(name) {
-  socket.send(JSON.stringify({ type: "channelAdd", arg1: name }));
+function createChannel(name, channelKey) {
+  socket.send(JSON.stringify({ type: "channelAdd", arg1: name, arg2: channelKey }));
 }
 
 function deleteChannel(channelId) {
@@ -371,7 +409,7 @@ function deleteMessage(messageId) {
 }
 function editMessage(messageId, newContent) {
   socket.send(
-    JSON.stringify({ type: "edit", arg1: messageId, arg2: newContent })
+    JSON.stringify({ type: "edit", arg1: messageId, arg2: encryptMessage(newContent, keys[currentChannel]) })
   );
 }
 
@@ -391,4 +429,115 @@ function getCookie(cname) {
     }
   }
   return "";
+}
+
+//*===============CRYPTO FUNCTIONS=======================
+// TODO: FIX EVERYTHING
+async function decryptChannelKey(channelKeyEncrypted) {
+  const encryptedBuffer = Uint8Array.from(atob(channelKeyEncrypted), c => c.charCodeAt(0));
+  const privateKey = await window.crypto.subtle.importKey(
+    "pkcs8",
+    str2ab(sessionStorage.getItem("privateKey")),
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["decrypt"]
+  );
+  const rawKey = await window.crypto.subtle.decrypt(
+    {
+      name: "RSA-OAEP"
+    },
+    privateKey,
+    encryptedBuffer
+  );
+  return await window.crypto.subtle.importKey(
+    "raw",
+    rawKey,
+    "AES-GCM",
+    true,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptChannelKey(channelKey, publicKeyBytes) {
+  const rawKey = await window.crypto.subtle.exportKey("raw", channelKey);
+  const publicKey = await window.crypto.subtle.importKey(
+    "spki",
+    publicKeyBytes,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["encrypt"]
+  );
+  const encrypted = await window.crypto.subtle.encrypt(
+    {
+      name: "RSA-OAEP"
+    },
+    publicKey,
+    rawKey
+  );
+  
+  return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+}
+
+async function encryptMessage(message, channelKey) {
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(message);
+
+  const ciphertext = await window.crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    channelKey,
+    encoded
+  );
+
+  return btoa(JSON.stringify({
+    iv: Array.from(iv),
+    ciphertext: Array.from(new Uint8Array(ciphertext))
+  }));
+}
+
+async function decryptMessage(encrypted, channelKey) {
+  const decoded = JSON.parse(atob(encrypted));
+  const iv = new Uint8Array(decoded.iv);
+  const ciphertext = new Uint8Array(decoded.ciphertext);
+
+  const decrypted = await window.crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    channelKey,
+    ciphertext
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+async function generateChannelKey() {
+  return window.crypto.subtle.generateKey(
+    {
+      name: "AES-GCM",
+      length: 256
+    },
+    true,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function sendData(endpoint, data) {
+    return await fetch(endpoint, {
+        method: "POST",
+        headers: {
+        "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+    });
+}
+
+function str2ab(str) {
+    const buf = new ArrayBuffer(str.length);
+    const bufView = new Uint8Array(buf);
+    for (let i = 0; i < str.length; i++) bufView[i] = str.charCodeAt(i);
+    return buf;
 }

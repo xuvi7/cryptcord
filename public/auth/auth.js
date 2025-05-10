@@ -40,11 +40,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const response = await sendData(endpoint, data);
                 if (response.ok) {
                     const result = await response.json();
+                    const publicKey = result.publicKey;
                     const privateKey = await decryptWithPassword(password, result.encryptedPrivateKey, result.salt, result.iv);
                     const authResponse = await authenticate(email, privateKey, result.secret);
                     if (authResponse.ok) {
                         console.log("Success:", result);
                         alert("Login successful!");
+                        sessionStorage.setItem("publicKey", ab2str(publicKey));
                         sessionStorage.setItem("privateKey", ab2str(privateKey));
                         window.location.href = "/chat";
                     } else {
@@ -79,6 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (authResponse.ok) {
                         console.log("Success:", result);
                         alert("Registration successful!");
+                        sessionStorage.setItem("publicKey", ab2str(publicKey));
                         sessionStorage.setItem("privateKey", ab2str(privateKey));
                         window.location.href = "/chat";
                     } else {
