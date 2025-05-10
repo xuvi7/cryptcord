@@ -5,6 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login/Register Form</title>
+  <script src="./auth.js"></script>
   <style>
     * {
       margin: 0;
@@ -189,76 +190,6 @@
       Need an account? <a href="#" id="toggleMode">Register</a>
     </div>
   </div>
-
-  <script>
-    const form = document.getElementById("authForm");
-    const formTitle = document.querySelector('h2');
-    const formSubtitle = document.querySelector('.subtitle');
-    const toggleMode = document.getElementById("toggleMode");
-    const usernameField = document.querySelector(".username-field");
-    let isLoginMode = true;
-
-    toggleMode.addEventListener("click", (e) => {
-      e.preventDefault();
-      isLoginMode = !isLoginMode;
-      if (isLoginMode) {
-        formTitle.textContent = 'Welcome back!';
-        formSubtitle.textContent = "We're so excited to see you again!";
-        toggleMode.textContent = 'Register';
-        usernameField.style.display = 'none';
-      } else {
-        formTitle.textContent = 'Create an account';
-        formSubtitle.textContent = "We hope you enjoy your time here!";
-        toggleMode.textContent = 'I already have an account';
-        usernameField.style.display = 'block';
-      }
-    });
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
-      const username = document.getElementById("username").value;
-
-      // PKDF secret key
-      // (register) generate assym key pair and encrypt private with secret key
-      // (login) ask server for encrypted private key, decrypt it, and use it to decrypt secret value that server sends
-
-      const endpoint = isLoginMode ? "/api/login" : "/api/register";
-      const data = isLoginMode
-        ? { email, password }
-        : { email, username, password };
-
-      try {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(data),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log("Success:", result);
-          alert(
-            isLoginMode ? "Login successful!" : "Registration successful!"
-          );
-          window.location.href = "/chat";
-        } else {
-          const error = await response.json();
-          console.error("Error:", error);
-          alert(
-            (isLoginMode ? "Login failed: " : "Registration failed: ") +
-            error.error
-          );
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        alert("An error occurred. Please try again.");
-      }
-    });
-  </script>
 </body>
 
 </html>

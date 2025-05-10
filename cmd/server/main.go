@@ -32,20 +32,21 @@ const (
 )
 
 type authenticateRequest struct {
-	Email     string  `json:"email"`
+	Email       string `json:"email"`
 	SecretValue string `json:"secret"`
 }
 
 type loginRequest struct {
-	Email     string  `json:"email"`
+	Email string `json:"email"`
 }
 
 type registerRequest struct {
-	Email               string  `json:"email"`
-	Username            string  `json:"username"`
+	Email               string `json:"email"`
+	Username            string `json:"username"`
 	EncryptedPrivateKey string `json:"privateKey"`
 	PublicKey           string `json:"publicKey"`
 	Salt                string `json:"salt"`
+	IV                  string `json:"iv"`
 }
 
 type keyRequest struct {
@@ -63,13 +64,13 @@ type Message struct {
 	MessageId string    `json:"messageId"`
 	Timestamp time.Time `json:"timestamp"`
 	//	ChannelID string    `json:"channelId"`
-	Username string  `json:"username"`
+	Username string `json:"username"`
 	Message  string `json:"message"`
 }
 
 type Channel struct {
-	ChannelID   string  `json:"channelId"`
-	ChannelName string  `json:"channelName"`
+	ChannelID   string `json:"channelId"`
+	ChannelName string `json:"channelName"`
 	Key         string `json:"key"`
 }
 
@@ -82,7 +83,7 @@ var db *sql.DB
 var tokens sync.Map // maps token to user ID
 var userConnMutex sync.Mutex
 var userConnections map[string]*websocket.Conn // maps user ID to websocket connection
-var secrets sync.Map // maps user ID to current secret value if in authentication process
+var secrets sync.Map                           // maps user ID to current secret value if in authentication process
 
 /*
 * API ENDPOINT HANDLER
@@ -97,7 +98,7 @@ func handleRegister(w http.ResponseWriter, req *http.Request) {
 	}
 	var requestData registerRequest
 	json.Unmarshal(body, &requestData)
-	uuid, err := registerUser(requestData.Email, requestData.Username, requestData.EncryptedPrivateKey, requestData.PublicKey, requestData.Salt)
+	uuid, err := registerUser(requestData.Email, requestData.Username, requestData.EncryptedPrivateKey, requestData.PublicKey, requestData.Salt, requestData.IV)
 	response := make(map[string]string)
 	if err != nil {
 		response["error"] = err.Error()
@@ -126,7 +127,8 @@ func handleRegister(w http.ResponseWriter, req *http.Request) {
 	}
 
 	response["secret"] = encryptedSecret
-	w.Write([]byte("{}"))
+	marshaledResponse, _ := json.Marshal(response)
+	w.Write(marshaledResponse)
 }
 
 /*
@@ -142,7 +144,7 @@ func handleLoginRequest(w http.ResponseWriter, req *http.Request) {
 
 	var requestData loginRequest
 	json.Unmarshal(body, &requestData)
-	salt, publicKey, encryptedPrivateKey, uuid, err := getUserLoginData(requestData.Email)
+	salt, publicKey, encryptedPrivateKey, uuid, iv, err := getUserLoginData(requestData.Email)
 	response := make(map[string]string)
 	if err != nil {
 		response["error"] = err.Error()
@@ -170,16 +172,17 @@ func handleLoginRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	response["salt"] = salt
-	response["publicKey"] = publicKey
 	response["encryptedPrivateKey"] = encryptedPrivateKey
+	response["iv"] = iv
 	response["secret"] = encryptedSecret
-	w.Write([]byte("{}"))
+	marshaledResponse, _ := json.Marshal(response)
+	w.Write(marshaledResponse)
 }
 
 /*
  * API ENDPOINT HANDLER
  * 1. verify user possesses private key
- * 2. generate session token for user 
+ * 2. generate session token for user
  * 3. send http response with session token as cookie
  */
 func handleAuthenticate(w http.ResponseWriter, req *http.Request) {
@@ -217,7 +220,7 @@ func handleAuthenticate(w http.ResponseWriter, req *http.Request) {
 		w.Write(marshaledResponse)
 		return
 	}
-	
+
 	sessionToken := createSessionToken(uuid)
 	setCookieHandler(w, sessionToken)
 	w.Write([]byte("{}"))
@@ -321,7 +324,7 @@ func createDatabase() {
 	file.Close()
 }
 
-func registerUser(email string, username string, encryptedPrivateKey string, publicKey string, salt string) (string, error) {
+func registerUser(email string, username string, encryptedPrivateKey string, publicKey string, salt string, iv string) (string, error) {
 	if len(username) < 3 {
 		return "", errors.New("username must be longer than 3 characters")
 	}
@@ -336,10 +339,11 @@ func registerUser(email string, username string, encryptedPrivateKey string, pub
 		"username",
 		"encryptedPrivateKey",
 		"publicKey",
-		"salt"
-		) VALUES (?, ?, ?, ?);`
+		"salt",
+		"iv"
+		) VALUES (?, ?, ?, ?, ?, ?, ?);`
 
-	_, err := db.Exec(insertUserSQL, uuid.String(), email, username, encryptedPrivateKey, publicKey, salt)
+	_, err := db.Exec(insertUserSQL, uuid.String(), email, username, encryptedPrivateKey, publicKey, salt, iv)
 	if err != nil {
 		return "", err
 	}
@@ -366,22 +370,23 @@ func generateCode() (string, error) {
 	return encode(b), nil
 }
 
-func getUserLoginData(email string) (string, string, string, string, error) {
+func getUserLoginData(email string) (string, string, string, string, string, error) {
 	if _, err := mail.ParseAddress(email); err != nil {
-		return "", "", "", "", errors.New("invalid email address")
+		return "", "", "", "", "", errors.New("invalid email address")
 	}
 
-	findDataSQL := `SELECT salt, publicKey, encryptedPrivateKey, uuid FROM users WHERE email = ?`
+	findDataSQL := `SELECT salt, publicKey, encryptedPrivateKey, uuid, iv FROM users WHERE email = ?`
 	val := db.QueryRow(findDataSQL, email)
 	salt := ""
 	publicKey := ""
 	encryptedPrivateKey := ""
 	uuid := ""
-	err := val.Scan(&salt, &publicKey, &encryptedPrivateKey, &uuid)
+	iv := ""
+	err := val.Scan(&salt, &publicKey, &encryptedPrivateKey, &uuid, &iv)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
-	return salt, publicKey, encryptedPrivateKey, uuid, nil
+	return salt, publicKey, encryptedPrivateKey, uuid, iv, nil
 }
 
 func getUserPKey(username string) (string, error) {
@@ -882,7 +887,8 @@ func main() {
 		"username" TEXT NOT NULL UNIQUE,
 		"encryptedPrivateKey" TEXT NOT NULL,
 		"publicKey" TEXT NOT NULL,
-		"salt" TEXT NOT NULL
+		"salt" TEXT NOT NULL,
+		"iv" TEXT NOT NULL
 		);`
 
 		_, err := db.Exec(createUserTableSQL)

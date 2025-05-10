@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"crypto/sha256"
 )
 
 // takes base64 encoded public key and data
@@ -22,7 +23,7 @@ func encrypt(key string, data string) (string, error) {
 		return "", err
 	}
 
-	encryptedBytes, err := rsa.EncryptOAEP(nil, rand.Reader, pubkey, decoded, nil)
+	encryptedBytes, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pubkey, decoded, nil)
 	if err != nil {
 		return "", err
 	}
