@@ -394,7 +394,7 @@ func getUserPKey(username string) (string, error) {
 	getUserSQL := `SELECT publicKey FROM users WHERE username = ?`
 	row := db.QueryRow(getUserSQL, username)
 	var key string
-	err := row.Scan(&username, &key)
+	err := row.Scan(&key)
 	if err != nil {
 		return "", err
 	}

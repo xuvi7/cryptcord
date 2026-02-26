@@ -266,18 +266,16 @@ async function handleSubscribe(channelId, username, encryptedKey) {
     users[channelId].push(username);
     renderCurrentUsers();
   } else {
-    console.log("subscribe channel key:" + encryptedKey);
     keys[channelId] = await decryptChannelKey(encryptedKey);
     const channelData = await fetch(`/api/getChannel/${channelId}`);
     const channelDataJson = await channelData.json();
-    messages[channelId] = [];
-    channelDataJson.messages.map(async (val) => {
-      messages[channelId].push({
+    messages[channelId] = await Promise.all(
+      channelDataJson.messages.map(async (val) => ({
         messageId: val.messageId,
         username: val.username,
         message: await decryptMessage(val.message, keys[channelId]),
-      });
-    });
+      }))
+    );
     users[channelId] = channelDataJson.users.map((user) => user.username);
     renderNewChannel(channelId, channelDataJson.name);
   }
@@ -312,23 +310,21 @@ async function getData() {
 
       myUsername = result.username;
 
-      for (const channel in result.channels) {
-        console.log("channelkey:" + channel.key);
+      for (const channel of result.channels) {
         keys[channel.channelId] = await decryptChannelKey(channel.key);
       }
 
-      for (const channel in result.messages) {
-        messages[channel] = [];
-        result.messages[channel].map(async (val) => {
-          messages[channel].push({
+      for (const channelId of Object.keys(result.messages)) {
+        messages[channelId] = await Promise.all(
+          result.messages[channelId].map(async (val) => ({
             messageId: val.messageId,
             username: val.username,
-            message: await decryptMessage(val.message, keys[channel]),
-          });
-        });
+            message: await decryptMessage(val.message, keys[channelId]),
+          }))
+        );
       }
-      for (const channel in result.users) {
-        users[channel] = result.users[channel].map((val) => {
+      for (const channelId of Object.keys(result.users)) {
+        users[channelId] = result.users[channelId].map((val) => {
           return val.username;
         });
       }
@@ -359,9 +355,9 @@ async function sendMessage() {
   const inputField = document.querySelector(".message-input-field");
   const text = inputField.value;
   if (text !== undefined && text !== "") {
-    console.log(await encryptMessage(text, keys[currentChannel]));
+    const encryptedMessage = await encryptMessage(text, keys[currentChannel]);
     socket.send(
-      JSON.stringify({ type: "message", arg1: currentChannel, arg2: await encryptMessage(text, keys[currentChannel]) })
+      JSON.stringify({ type: "message", arg1: currentChannel, arg2: encryptedMessage })
     );
     inputField.value = "";
   }
@@ -377,14 +373,13 @@ async function subscribeUser() {
       const response = await sendData(endpoint, data);
       if (response.ok) {
         const result = await response.json();
-        socket.send(
-          JSON.stringify({
-            type: "channelSub",
-            arg1: currentChannel,
-            arg2: username,
-            arg3: await encryptChannelKey(keys[currentChannel], result.publicKey)
-          })
-        );
+        const message = JSON.stringify({
+          type: "channelSub",
+          arg1: currentChannel,
+          arg2: username,
+          arg3: await encryptChannelKey(keys[currentChannel], result.publicKey)
+        })
+        socket.send(message);
       } else {
         const error = await response.json();
         console.error("Error:", error);
@@ -407,9 +402,10 @@ function deleteChannel(channelId) {
 function deleteMessage(messageId) {
   socket.send(JSON.stringify({ type: "delete", arg1: messageId }));
 }
-function editMessage(messageId, newContent) {
+async function editMessage(messageId, newContent) {
+  const encryptedContent = await encryptMessage(newContent, keys[currentChannel]);
   socket.send(
-    JSON.stringify({ type: "edit", arg1: messageId, arg2: encryptMessage(newContent, keys[currentChannel]) })
+    JSON.stringify({ type: "edit", arg1: messageId, arg2: encryptedContent })
   );
 }
 
@@ -460,9 +456,10 @@ async function decryptChannelKey(channelKeyEncrypted) {
 
 async function encryptChannelKey(channelKey, publicKeyBytes) {
   const rawKey = await window.crypto.subtle.exportKey("raw", channelKey);
+  const publicKeySpki = normalizePublicKeyInput(publicKeyBytes);
   const publicKey = await window.crypto.subtle.importKey(
     "spki",
-    publicKeyBytes,
+    publicKeySpki,
     { name: "RSA-OAEP", hash: "SHA-256" },
     true,
     ["encrypt"]
@@ -474,8 +471,8 @@ async function encryptChannelKey(channelKey, publicKeyBytes) {
     publicKey,
     rawKey
   );
-  
-  return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+
+  return bytesToBase64(new Uint8Array(encrypted));
 }
 
 async function encryptMessage(message, channelKey) {
@@ -492,15 +489,15 @@ async function encryptMessage(message, channelKey) {
   );
 
   return btoa(JSON.stringify({
-    iv: Array.from(iv),
-    ciphertext: Array.from(new Uint8Array(ciphertext))
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext))
   }));
 }
 
 async function decryptMessage(encrypted, channelKey) {
   const decoded = JSON.parse(atob(encrypted));
-  const iv = new Uint8Array(decoded.iv);
-  const ciphertext = new Uint8Array(decoded.ciphertext);
+  const iv = base64ToBytes(decoded.iv);
+  const ciphertext = base64ToBytes(decoded.ciphertext);
 
   const decrypted = await window.crypto.subtle.decrypt(
     {
@@ -540,4 +537,40 @@ function str2ab(str) {
     const bufView = new Uint8Array(buf);
     for (let i = 0; i < str.length; i++) bufView[i] = str.charCodeAt(i);
     return buf;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64) {
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+function normalizePublicKeyInput(value) {
+  if (value instanceof ArrayBuffer) return value;
+  if (ArrayBuffer.isView(value)) return value.buffer;
+  if (typeof value === "string") {
+    if (value.includes("BEGIN PUBLIC KEY")) {
+      return pemToArrayBuffer(value);
+    }
+    try {
+      return base64ToBytes(value).buffer;
+    } catch (err) {
+      return str2ab(value);
+    }
+  }
+  throw new TypeError("Unsupported public key format");
+}
+
+function pemToArrayBuffer(pem) {
+  const clean = pem
+    .replace(/-----BEGIN PUBLIC KEY-----/g, "")
+    .replace(/-----END PUBLIC KEY-----/g, "")
+    .replace(/\s+/g, "");
+  return base64ToBytes(clean).buffer;
 }
