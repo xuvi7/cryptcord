@@ -12,7 +12,7 @@ CryptCord demonstrates secure messaging and group chat functionality in a browse
 * Only authorized users can access specific channels.
 * Messages can be sent, edited, and deleted in real time.
 * Communication remains confidential and tamper-resistant against a semi-honest server.
-  Messages and keys are always encrypted client-side using AES-GCM, while RSA is used for key distribution.
+  Messages are encrypted client-side using AES-GCM, while RSA-OAEP is used to distribute channel AES keys.
 
 
 ## Architecture
@@ -69,7 +69,7 @@ Visit:
 
      * Salt
      * RSA public/private keypair
-     * AES key derived from password + salt (PBKDF)
+   * AES key derived from password + salt (PBKDF2)
    * Private key encrypted locally with password-derived AES key.
    * Server stores public key, salt, and encrypted private key.
 
@@ -84,7 +84,8 @@ Visit:
 3. **Channel creation**
 
    * Channel owner generates a random AES key.
-   * Key is RSA-encrypted for each channel member and sent via the server.
+   * Key is RSA-encrypted for the creator first; additional members are added later by re-encrypting
+     the same channel key for the invitee and sending it via the server.
 
 4. **Messaging**
 
@@ -121,7 +122,7 @@ CryptCord is designed to be secure against **semi-honest servers** and **externa
 ### 5. Replay and MITM Resistance
 
 * WebSocket messages are authenticated through the active session token.
-* Each user-specific session token and per-channel AES key ensures that replayed or intercepted ciphertexts are invalid outside their session context.
+* WebSocket access is gated by the session token, and AES-GCM provides integrity for ciphertexts in transit.
 * Without the private key or symmetric key, intercepted packets remain undecipherable.
 
 ### 6. Limitations
