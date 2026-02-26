@@ -541,7 +541,7 @@ func createChannel(userUuid string, name string, encryptedKey string) error {
 		return err
 	}
 
-	updateUsers("createChannel", channelUuid, username, name)
+	updateUsers("createChannel", channelUuid, username, name, encryptedKey)
 
 	return nil
 }
@@ -648,7 +648,7 @@ func setCookieHandler(w http.ResponseWriter, token string) {
  * edit args: messageId,content;
  * delete args: messageId;
  * subscribe args: username;
- * createChannel args: username;
+ * createChannel args: username, name, encryptedKey;
  * deleteChannel args: null;
  */
 func updateUsers(action string, channelId string, args ...any) {

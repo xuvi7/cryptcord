@@ -26,7 +26,7 @@ socket.onmessage = async (event) => {
       await handleSubscribe(data.channelId, data.arg1, data.arg2);
       break;
     case "createChannel":
-      handleCreateChannel(data.channelId, data.arg1, data.arg2);
+      await handleCreateChannel(data.channelId, data.arg1, data.arg2, data.arg3);
       break;
     case "deleteChannel":
       handleDeleteChannel(data.channelId);
@@ -281,7 +281,14 @@ async function handleSubscribe(channelId, username, encryptedKey) {
   }
 }
 
-function handleCreateChannel(channelId, username, name) {
+async function handleCreateChannel(channelId, username, name, encryptedKey) {
+  if (encryptedKey) {
+    try {
+      keys[channelId] = await decryptChannelKey(encryptedKey);
+    } catch (err) {
+      console.error("Failed to decrypt channel key:", err);
+    }
+  }
   messages[channelId] = [];
   users[channelId] = [username];
   renderNewChannel(channelId, name);
@@ -356,6 +363,7 @@ async function sendMessage() {
   const text = inputField.value;
   if (text !== undefined && text !== "") {
     const encryptedMessage = await encryptMessage(text, keys[currentChannel]);
+    // console.log(encryptedMessage);
     socket.send(
       JSON.stringify({ type: "message", arg1: currentChannel, arg2: encryptedMessage })
     );
@@ -368,6 +376,12 @@ async function subscribeUser() {
   const username = inputField.value;
   if (username !== undefined && username !== "") {
     try {
+      if (currentChannel === "") {
+        alert("Please select a channel first.");
+        inputField.value = "";
+        return;
+      }
+      const channelKey = await ensureChannelKey(currentChannel);
       const endpoint = "/api/getKey"
       const data = { username }
       const response = await sendData(endpoint, data);
@@ -377,7 +391,7 @@ async function subscribeUser() {
           type: "channelSub",
           arg1: currentChannel,
           arg2: username,
-          arg3: await encryptChannelKey(keys[currentChannel], result.publicKey)
+          arg3: await encryptChannelKey(channelKey, result.publicKey)
         })
         socket.send(message);
       } else {
@@ -428,7 +442,6 @@ function getCookie(cname) {
 }
 
 //*===============CRYPTO FUNCTIONS=======================
-// TODO: FIX EVERYTHING
 async function decryptChannelKey(channelKeyEncrypted) {
   const encryptedBuffer = Uint8Array.from(atob(channelKeyEncrypted), c => c.charCodeAt(0));
   const privateKey = await window.crypto.subtle.importKey(
@@ -549,6 +562,33 @@ function bytesToBase64(bytes) {
 
 function base64ToBytes(base64) {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+function isCryptoKey(value) {
+  return typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+}
+
+async function ensureChannelKey(channelId) {
+  const existing = keys[channelId];
+  if (isCryptoKey(existing)) {
+    return existing;
+  }
+  if (typeof existing === "string" && existing !== "") {
+    const decrypted = await decryptChannelKey(existing);
+    keys[channelId] = decrypted;
+    return decrypted;
+  }
+  const channelData = await fetch(`/api/getChannel/${channelId}`);
+  if (!channelData.ok) {
+    throw new Error("Failed to fetch channel key");
+  }
+  const channelDataJson = await channelData.json();
+  if (!channelDataJson.key) {
+    throw new Error("Missing channel key from server");
+  }
+  const decrypted = await decryptChannelKey(channelDataJson.key);
+  keys[channelId] = decrypted;
+  return decrypted;
 }
 
 function normalizePublicKeyInput(value) {
